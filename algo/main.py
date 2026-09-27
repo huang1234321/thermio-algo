@@ -19,8 +19,14 @@ from algo.fdd.engine import FddEngine
 from algo.fdd.report import FddReportGenerator
 from algo.fdd.thresholds import ThresholdStore
 from algo.kafka.consumer import ExecutedEventConsumer, LatestCache, TelemetryLatestConsumer
+from algo.kafka.topics import GROUP_ALGO_OPTIMIZER
 from algo.obs.logging import get_logger, setup_logging
+from algo.optimizer.config import OptimizerConfigStore
+from algo.optimizer.engine import OptimizerEngine, WeatherViewReader
+from algo.optimizer.forecast_store import ForecastStore
+from algo.optimizer.suppress import FddSuppressView
 from algo.platform.client import PlatformClient
+from algo.proposal.producer import ProposalSubmitter
 from algo.sched import JOB_TRIGGERS, JobFn, build_scheduler
 from algo.semantics.snapshot import SnapshotService, snapshot_refresh_job
 from algo.tsdb.client import TsdbClient
@@ -67,6 +73,30 @@ class App:
             settings.broker_list, self.latest, lag_warn=settings.kafka_lag_warn
         )
         self.executed_consumer = ExecutedEventConsumer(settings.broker_list)
+        # 优化器槽位（optimizer.md §1：optimize_15m 填充；启用 = ALGO_JOBS_ENABLED 追加）。
+        # 独立 LatestCache + algo-optimizer 组（ADR-004 能力独立 consumer group）；
+        # FDD 与优化器共享 Hysteresis 实例（§6.7 FDD 开放发现的进程内抑制视图）。
+        self.optimizer_latest = LatestCache(dedup_capacity=settings.dedup_cache_size)
+        self.optimizer_consumer = TelemetryLatestConsumer(
+            settings.broker_list,
+            self.optimizer_latest,
+            lag_warn=settings.kafka_lag_warn,
+            group=GROUP_ALGO_OPTIMIZER,
+        )
+        self.optimizer_store = OptimizerConfigStore("config/optimizer.yaml")  # §10 零新增 env
+        self.forecast_store = ForecastStore()
+        self.fdd_suppress = FddSuppressView()
+        self.fdd_suppress.bind(self.engine.hysteresis)
+        self.optimizer = OptimizerEngine(
+            tsdb=self.tsdb,
+            snapshot=self.snapshot,
+            config=self.optimizer_store,
+            submitter=ProposalSubmitter(self.platform),
+            latest=self.optimizer_latest,
+            forecast_store=self.forecast_store,
+            weather_reader=WeatherViewReader(self.weather),
+            suppress=self.fdd_suppress,
+        )
 
     def job_fns(self) -> dict[str, tuple[str, JobFn]]:
         """job_id → (cron, 任务体工厂)。槽位任务（forecast/optimize）默认禁用（§3）。"""
@@ -92,6 +122,7 @@ class App:
                 JOB_TRIGGERS["snapshot_refresh"],
                 _snapshot_refresh(self.snapshot),
             ),
+            "optimize_15m": (JOB_TRIGGERS["optimize_15m"], self.optimizer.run_round),
         }
         return {k: v for k, v in table.items() if k in self.settings.jobs_enabled}
 
@@ -100,10 +131,15 @@ class App:
         await self.platform.start()
         await self.telemetry_consumer.start()
         await self.executed_consumer.start()
+        if "optimize_15m" in self.settings.jobs_enabled:
+            # algo-optimizer 组仅随槽位启用（禁用态不建 consumer group）
+            await self.optimizer_consumer.start()
 
     async def stop(self) -> None:
         # 优雅退出顺序（§3）：停订阅 → 等在跑 job（scheduler 层）→ 冲指标 → 关连接池
         await self.telemetry_consumer.stop()
+        if "optimize_15m" in self.settings.jobs_enabled:
+            await self.optimizer_consumer.stop()
         await self.executed_consumer.stop()
         await self.platform.stop()
         await self.tsdb.stop()

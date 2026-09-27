@@ -1,0 +1,22 @@
+{
+  "name": "optimizer-warmup",
+  "description": "IMPL-19/DAT-165 暖流：OP 点位静默超 stale_timeout(300s) 后，stale 期间写入携带 bit3 （ingest process.go §6.3）——场景回放前先送两轮 live 清 StaleTracker，防回放数据被污染。",
+  "duration_s": 8,
+  "gateways": {
+    "count": 1
+  },
+  "points": {
+    "count": 13,
+    "numeric_ratio": 1.0,
+    "units": [
+      "degC"
+    ],
+    "base": 20.0,
+    "amplitude": 0.0,
+    "noise": 0.0,
+    "offset": 100
+  },
+  "sample_interval_s": 5,
+  "batch_points": 500,
+  "seed": 7
+}

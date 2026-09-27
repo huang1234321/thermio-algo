@@ -95,6 +95,14 @@ class Hysteresis:
     def is_active(self, equipment_id: str, rule_key: str) -> bool:
         return self._cells.get((equipment_id, rule_key), _Cell()).active
 
+    def active_rules(self, equipment_id: str) -> set[str]:
+        """该设备当前全部活跃规则键（optimizer.md §6.7 standby 无开放故障判据）。"""
+        return {
+            rule_key
+            for (eq, rule_key), cell in self._cells.items()
+            if eq == equipment_id and cell.active
+        }
+
     def reset(self) -> None:
         """重启语义（§1.4）：清零（confirm 侧最多延迟一个确认窗，clear 侧重新计数）。"""
         self._cells.clear()

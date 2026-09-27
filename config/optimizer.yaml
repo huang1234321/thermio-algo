@@ -1,0 +1,50 @@
+# 冷热源 advisory 寻优配置（DAT-126 详设 §10/§11，IMPL-19）。修改后下一 15min
+# 槽位生效，无需重启（mtime 热调 + 原子 rename 写入纪律；坏配置沿用上一份有效值）。
+# 归因：热调不进 algo_version，生效段指纹进 evidence.cfg_fp8（optimizer.md §2/§8.4）。
+version: 1
+defaults:
+  min_expected_saving_kw: 5.0        # 噪声下限（R3 豁免）
+  proposal_ttl_min: 45               # = 冷却窗（3 槽位）
+  deadband_c: 0.5                    # 温度类值死区
+  systems: [chilled_water]           # system_type 扫描范围（热源季扩 hot_water；
+                                     # MVP scope 口径见 engine 模块 docstring）
+  min_good_ratio: 0.8                # 窗口质量门控（algo.md §5.2 同源）
+  window_min: 60                     # 装配取窗宽度（覆盖最宽 sustain）
+  cop_default: 5.0                   # proxy 负荷的额定 COP 兜底
+  idle_power_ratio: 0.3              # §8.2 额定两点线性化的怠机功率比（保守下段）
+strategies:
+  chw.temp_reset:
+    enabled: true
+    step_c: 0.5
+    max_total_reset_c: 1.5           # 相对当前值的单向上限
+    delta_t_low_c: 2.0
+    load_ratio_max: 0.55
+    sustain_min: 30
+    sensitivity_pct_per_c: 0.02
+    confidence_cap: 0.85
+  chiller.stage_down:
+    enabled: true
+    stage_down_ratio: 0.45
+    stage_headroom: 0.85
+    sustain_min: 30
+    confidence_cap: 0.80
+  chiller.stage_up:
+    enabled: true
+    stage_up_ratio: 0.92
+    sustain_min: 20
+    confidence_cap: 0.75
+    exempt_min_saving: true          # 保护性豁免噪声下限
+  cw.temp_reset:
+    enabled: true                    # 试点楼无冷却水设定点/风机测点时自动不适用（§4.2）
+    step_c: 1.0
+    approach_max_c: 5.0
+    fan_headroom_pct: 0.80
+    fan_penalty_pct_per_c: 0.50
+    cw_sensitivity_pct_per_c: 0.01
+    confidence_cap: 0.80
+buildings:
+  "<试点楼 building_id>":            # 试点楼覆盖段（f_param=1.0 的判定依据）
+    strategies:
+      chw.temp_reset: {delta_t_low_c: 2.2, sensitivity_pct_per_c: 0.018}
+    chillers:                        # rated_params 缺键兜底（§6.6-2）
+      "1#冷机": {rated_cooling_capacity_kw: 2110, rated_input_power_kw: 420, min_unload_ratio: 0.25}

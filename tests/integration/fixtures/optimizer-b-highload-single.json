@@ -1,0 +1,103 @@
+{
+  "name": "optimizer-b-highload-single",
+  "description": "IMPL-19/DAT-165 scenario b-highload-single（站房 = algo-optimizer-seed.sql）",
+  "duration_s": 30,
+  "gateways": {
+    "count": 1
+  },
+  "points": {
+    "count": 13,
+    "numeric_ratio": 1.0,
+    "units": [
+      "degC"
+    ],
+    "base": 20.0,
+    "amplitude": 0.0,
+    "noise": 0.0,
+    "offset": 100,
+    "overrides": {
+      "SIM_0100": {
+        "unit": "degC",
+        "base": 7.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0103": {
+        "kind": "enum",
+        "enum_values": [
+          "running"
+        ]
+      },
+      "SIM_0104": {
+        "unit": "dimensionless",
+        "base": 1.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0105": {
+        "unit": "degC",
+        "base": 7.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0106": {
+        "unit": "degC",
+        "base": 7.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0108": {
+        "kind": "enum",
+        "enum_values": [
+          "stopped"
+        ]
+      },
+      "SIM_0109": {
+        "unit": "dimensionless",
+        "base": 0.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0112": {
+        "unit": "degC",
+        "base": 24.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0101": {
+        "base": 9.5,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0102": {
+        "base": 800.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0107": {
+        "base": 0.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0110": {
+        "base": 26.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0111": {
+        "base": 20.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      }
+    }
+  },
+  "sample_interval_s": 300,
+  "batch_points": 500,
+  "seed": 7,
+  "backfill": {
+    "enabled": true,
+    "days": 1,
+    "step_s": 300,
+    "publish_interval_ms": 20
+  }
+}
