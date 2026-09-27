@@ -1,0 +1,52 @@
+# 集成测试阈值（DAT-154）：快窗快确认（5min 桶 × confirm/clear=1），
+# 使 compose 回放链路在一轮内可断言命中/消除；生产缺省见 config/thresholds.yaml。
+version: 1
+defaults:
+  min_good_ratio: 0.8
+  confirm_windows: 1
+  clear_windows: 1
+  window_minutes: 5
+rules:
+  chiller.delta_t_low:
+    severity: warning
+    params:
+      delta_t_min_c: 1.2 # 数据面：supply≈20°C / return(degF 归一)≈−6°C → ΔT 深负 → 命中
+      load_ratio_min: 0.3 # power≈22kW / 额定 50 → 0.44 ≥ 0.3
+  chiller.supply_temp_high:
+    severity: minor
+    params:
+      supply_max_c: 25.0 # 数据面 ≈20°C → 负路径
+  chiller.power_ratio_high:
+    severity: major
+    params:
+      ratio_max: 0.95 # 0.44 → 负路径
+  chiller.temp_sensor_reversed:
+    severity: warning
+    params:
+      margin_c: 0.0 # ΔT<0 → 命中
+  chwp_pump.power_ratio_low_running:
+    params:
+      ratio_min: 0.3 # 25/40=0.63 → 负路径
+  chwp_pump.power_ratio_high_running:
+    params:
+      ratio_max: 1.1
+  chwp_pump.power_unstable:
+    params:
+      cv_max: 0.25 # 窗内正弦缓变 → 负路径
+      power_min_kw: 0.5
+  cwp_pump.power_ratio_low_running:
+    params:
+      ratio_min: 0.3 # 26/40=0.65 → 负路径
+  cwp_pump.power_ratio_high_running:
+    params:
+      ratio_max: 1.1
+  cooling_tower.approach_high:
+    severity: minor
+    params:
+      approach_max_c: 6.0 # 出水≈23 − 湿球(15°C/60%→≈11) ≈ 12 → 命中
+  cooling_tower.supply_temp_high:
+    params:
+      supply_max_c: 37.0 # ≈23 → 负路径
+  cooling_tower.delta_t_high:
+    params:
+      delta_t_max_c: 8.0 # ΔT≈1 → 负路径

@@ -1,0 +1,92 @@
+[project]
+name = "thermio-algo"
+version = "0.1.0"
+description = "thermio 算法服务（ADR-008）：FDD 规则引擎 + APScheduler 多调度任务 + proposal 生成器接口"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    # APScheduler 3.x 稳定线（4.x API 未稳，algo.md §2）
+    "apscheduler>=3.11,<4",
+    "aiokafka>=0.12",
+    "asyncpg>=0.30",
+    "httpx>=0.28",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "structlog>=24.4",
+    "prometheus-client>=0.21",
+    "python-ulid>=2.7",
+    "pyyaml>=6.0",
+    "python-snappy>=0.7.3",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["algo"]
+
+# ── ruff（lint + format，PY-07）────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["algo", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",      # pycodestyle / pyflakes
+    "I",                # import 排序
+    "B",                # bugbear（PY-02 精神：捕获面不吞错）
+    "UP",               # pyupgrade
+    "S",                # bandit（SEC 域兜底）
+    "RUF",
+]
+ignore = [
+    "S101",             # assert：测试与断言式不变量是合法用途
+    # 中日韩注释/文案里的全角标点（RUF001-003）与本仓中文注释规范冲突，豁免；
+    # 其余 RUF 规则保持生效。
+    "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S311"]  # 测试随机不涉密码学
+
+# ── mypy strict（PY-01）────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+# 第三方缺 stub 的仅此两处豁免（注释日期 2026-09-27）：
+[[tool.mypy.overrides]]
+module = "aiokafka.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "asyncpg.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "apscheduler.*"
+ignore_missing_imports = true
+
+# ── pytest（CODE-TST；integration 层默认跳过，见 tests/integration/conftest.py）
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: compose 回放链路（需独立栈，经 scripts/it-fdd.sh 驱动）",
+]
+addopts = "-m 'not integration'"

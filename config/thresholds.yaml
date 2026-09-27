@@ -1,0 +1,77 @@
+# 阈值热调文件（ADR-008 / algo.md §7.4）。
+# 修改后下一评估周期生效，无需重启（IMPL-16 验收项）。
+# 写入纪律：编辑器/配置管理以「临时文件 + 原子 rename」落盘，防读到半写状态。
+# 生产值走配置管理；本文件为结构示例 + 保守缺省（SEC-KEY-06 同精神：不含环境机密）。
+version: 1
+defaults: # 全规则兜底，rules.<key> 可逐项覆盖
+  min_good_ratio: 0.8 # 桶好样本占比下限（§5.2 质量门控）
+  confirm_windows: 3 # 连续命中 N 轮才产出 finding（防单窗毛刺）
+  clear_windows: 6 # 连续未命中 N 轮才提交 cleared（防振荡；> confirm 是有意不对称）
+  window_minutes: 30
+rules:
+  # ── 冷机 ──
+  chiller.delta_t_low:
+    severity: warning
+    window_minutes: 30
+    params:
+      delta_t_min_c: 1.2 # 供回温差下限（ΔT = 回水 − 供水均值）
+      load_ratio_min: 0.3 # 仅在负荷 ≥ 30% 额定时评判（低负荷低 ΔT 非故障）
+  chiller.supply_temp_high:
+    severity: minor
+    window_minutes: 30
+    params:
+      supply_max_c: 9.0
+  chiller.power_ratio_high:
+    severity: major
+    window_minutes: 30
+    params:
+      ratio_max: 0.95
+  chiller.temp_sensor_reversed:
+    severity: warning
+    window_minutes: 30
+    params:
+      margin_c: 0.0
+  # ── 冷冻水泵 ──
+  chwp_pump.power_ratio_low_running:
+    severity: minor
+    window_minutes: 30
+    params:
+      ratio_min: 0.3
+  chwp_pump.power_ratio_high_running:
+    severity: major
+    window_minutes: 30
+    params:
+      ratio_max: 1.10
+  chwp_pump.power_unstable:
+    severity: warning
+    window_minutes: 60
+    params:
+      cv_max: 0.25 # 桶均值变异系数上限
+      power_min_kw: 0.5 # 低值段不评判（CV 分母无意义）
+  # ── 冷却水泵 ──
+  cwp_pump.power_ratio_low_running:
+    severity: minor
+    window_minutes: 30
+    params:
+      ratio_min: 0.3
+  cwp_pump.power_ratio_high_running:
+    severity: major
+    window_minutes: 30
+    params:
+      ratio_max: 1.10
+  # ── 冷却塔 ──
+  cooling_tower.approach_high:
+    severity: minor
+    window_minutes: 60
+    params:
+      approach_max_c: 6.0 # 出水温度 − 湿球温度 上限
+  cooling_tower.supply_temp_high:
+    severity: major
+    window_minutes: 30
+    params:
+      supply_max_c: 37.0
+  cooling_tower.delta_t_high:
+    severity: warning
+    window_minutes: 30
+    params:
+      delta_t_max_c: 8.0

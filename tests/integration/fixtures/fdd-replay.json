@@ -1,0 +1,17 @@
+{
+  "name": "fdd-replay",
+  "description": "IMPL-16 集成（DAT-154）：FDD 规则链路回放。网关 1 点位 SIM_0000..0015（12 数值 + 4 枚态 run_status=running），数值基线 20±5 喂规则窗（冷机供回水/功率、塔供回水、双泵功率）；夹具 SQL（algo-fdd-seed.sql）把点位映射到 CH-1/CH-2/CT-1/P-1/P-2。期望：chiller.delta_t_low（degF→degC 归一后 ΔT 深负）+ chiller.temp_sensor_reversed + cooling_tower.approach_high（湿球 11 vs 出水 23）命中；其余规则负路径。",
+  "duration_s": 330,
+  "gateways": { "count": 1 },
+  "points": {
+    "count": 16,
+    "numeric_ratio": 0.75,
+    "units": ["degC", "degF", "kW", "degC", "degC", "kW", "kW", "degC", "degC", "degC", "degC", "degC"],
+    "base": 20,
+    "amplitude": 5,
+    "noise": 0.2,
+    "enum_values": ["running"]
+  },
+  "sample_interval_s": 5,
+  "batch_points": 500
+}
