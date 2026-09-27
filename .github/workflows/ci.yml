@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: 依赖同步（uv.lock 入库，PY-03）
+        run: uv sync --frozen
+      - name: ruff（lint + format 校验，PY-07）
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: mypy strict（PY-01）
+        run: uv run mypy algo
+      - name: pytest（unit + contract；integration 需独立栈，本地经 scripts/it-fdd.sh）
+        run: uv run pytest -v
