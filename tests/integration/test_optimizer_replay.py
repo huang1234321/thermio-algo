@@ -89,6 +89,32 @@ async def _wait_for_scenario_data(it_env, latest: LatestCache) -> None:  # type:
     pytest.fail("场景数据 90s 内未完成过链（EMQX→ingestd→TSDB/Kafka）——检查 ingestd 日志")
 
 
+async def _ensure_window_buckets(it_env) -> dict[int, int]:  # type: ignore[no-untyped-def]
+    """确认 cagg 评估窗已物化（自愈重试 + 诊断计数）。
+
+    全量套件中 FDD 回放先行的负载下，数据过链后立即评估曾间歇读到空窗
+    （回放行落入历史桶、invalidation 物化滞后于 wait 判据）。此处对
+    「功率桶 ≥ 8」做最多 3 轮 refresh+等待自愈；仍空则返回计数供断言输出。
+    """
+    for _ in range(3):
+        conn = await asyncpg.connect(it_env.tsdb_admin_dsn)
+        try:
+            rows = await conn.fetch(
+                "SELECT point_id, count(*) AS n FROM telemetry_5min "
+                "WHERE point_id = ANY($1::bigint[]) AND bucket > now() - interval '70 minutes' "
+                "GROUP BY point_id",
+                [103, 107],  # 双机功率桶
+            )
+            counts = {r["point_id"]: r["n"] for r in rows}
+            if all(c >= 8 for c in counts.values()) and len(counts) == 2:
+                return counts
+            await conn.execute("CALL refresh_continuous_aggregate('telemetry_5min', NULL, NULL)")
+        finally:
+            await conn.close()
+        await asyncio.sleep(3)
+    return counts
+
+
 async def _purge_scenario_data(admin_dsn: str) -> None:
     """逐场景清理优化器点位的原始+聚合数据（场景确定性：不同回放的 ts 网格错位，
     同桶混值会污染窗口均值；删除后 refresh 使 cagg 失效区间重算）。"""
@@ -177,10 +203,13 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         await _run_gwsim(it_env, "optimizer-a-lowload-dual.json")
         await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
+        _win = await _ensure_window_buckets(it_env)
         ra = await engine.run_round()
         assert ra.errors == 0 and ra.plants >= 1
         posts = _posts(state)
-        assert len(posts) == 1, f"A 场景应恰出 1 条 R2，实得 {len(posts)}"
+        assert len(posts) == 1, (
+            f"A 场景应恰出 1 条 R2，实得 {len(posts)}（window_buckets={_win}；round={ra}）"
+        )
         env = posts[0]
         assert env["algo"] == "optimizer/chiller-sequencer"
         assert env["target"]["point"] == "unit_enable"
@@ -197,6 +226,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         await _run_gwsim(it_env, "optimizer-b-highload-single.json")
         await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
+        _win = await _ensure_window_buckets(it_env)
         rb = await engine.run_round()
         assert rb.errors == 0
         posts = _posts(state)
@@ -216,6 +246,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         await _run_gwsim(it_env, "optimizer-c-lowdeltat.json")
         await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
+        _win = await _ensure_window_buckets(it_env)
         rc1 = await engine.run_round()
         assert rc1.errors == 0
         posts = _posts(state)
@@ -247,6 +278,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         await _run_gwsim(it_env, "optimizer-d-condenser.json")
         await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
+        _win = await _ensure_window_buckets(it_env)
         rd = await engine.run_round()
         assert rd.errors == 0
         posts = _posts(state)
@@ -266,6 +298,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         await _run_gwsim(it_env, "optimizer-e-fdd-suppress.json")
         await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
+        _win = await _ensure_window_buckets(it_env)
         thresholds = ThresholdStore(FIXTURES / "thresholds-it.yaml")  # confirm=1
         hyst = Hysteresis()
         suppress.bind(hyst)  # FDD 与优化器共享迟滞面（§6.7 进程内抑制视图）
@@ -323,6 +356,7 @@ async def test_optimizer_advisory_only_gate(it_env) -> None:  # type: ignore[no-
         await _run_gwsim(it_env, "optimizer-c-lowdeltat.json")
         await _wait_for_scenario_data(it_env, _latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
+        _win = await _ensure_window_buckets(it_env)
         r = await engine.run_round()
         assert r.errors == 0
         assert r.drafts == [] and _posts(state) == []
