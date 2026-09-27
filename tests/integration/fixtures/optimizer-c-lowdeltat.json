@@ -1,34 +1,103 @@
 {
-    "name": "optimizer-c-lowdeltat",
-    "description": "IMPL-19/DAT-165 低温差：ΔT 1.6 < 2.0、负荷率 0.476 < 0.55、setpoint 7.0+0.5 ≤ clamp 9 → R1 抬温（E1=8 kW）；节流用例连跑三轮仅首轮出卡。 站房 = algo-optimizer-seed.sql（OP-SYS：双冷机+塔）。",
-    "duration_s": 30,
-    "gateways": {"count": 1},
-    "points": {
-        "count": 13,
-        "numeric_ratio": 1.0,
-        "units": ["degC"],
+  "name": "optimizer-c-lowdeltat",
+  "description": "IMPL-19/DAT-165 scenario c-lowdeltat（站房 = algo-optimizer-seed.sql）",
+  "duration_s": 30,
+  "gateways": {
+    "count": 1
+  },
+  "points": {
+    "count": 13,
+    "numeric_ratio": 1.0,
+    "units": [
+      "degC"
+    ],
+    "base": 20.0,
+    "amplitude": 0.0,
+    "noise": 0.0,
+    "offset": 100,
+    "overrides": {
+      "SIM_0100": {
+        "unit": "degC",
+        "base": 7.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0103": {
+        "kind": "enum",
+        "enum_values": [
+          "running"
+        ]
+      },
+      "SIM_0104": {
+        "unit": "dimensionless",
+        "base": 1.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0105": {
+        "unit": "degC",
+        "base": 7.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0106": {
+        "unit": "degC",
+        "base": 7.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0108": {
+        "kind": "enum",
+        "enum_values": [
+          "running"
+        ]
+      },
+      "SIM_0109": {
+        "unit": "dimensionless",
+        "base": 1.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0112": {
+        "unit": "degC",
+        "base": 24.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0101": {
+        "base": 8.6,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0102": {
+        "base": 400.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0107": {
+        "base": 400.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0110": {
+        "base": 26.0,
+        "amplitude": 0.0,
+        "noise": 0.0
+      },
+      "SIM_0111": {
         "base": 20.0,
         "amplitude": 0.0,
-        "noise": 0.0,
-        "offset": 100,
-        "overrides": {
-            "SIM_0100": {"unit": "degC", "base": 7.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0103": {"kind": "enum", "enum_values": ["running"]},
-            "SIM_0104": {"unit": "dimensionless", "base": 1.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0105": {"unit": "degC", "base": 7.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0106": {"unit": "degC", "base": 7.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0108": {"kind": "enum", "enum_values": ["running"]},
-            "SIM_0109": {"unit": "dimensionless", "base": 1.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0112": {"unit": "degC", "base": 24.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0110": {"unit": "degC", "base": 26.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0111": {"unit": "kW", "base": 20.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0101": {"base": 8.6, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0102": {"base": 400.0, "amplitude": 0.0, "noise": 0.0},
-            "SIM_0107": {"base": 400.0, "amplitude": 0.0, "noise": 0.0},
-        },
-    },
-    "sample_interval_s": 300,
-    "batch_points": 500,
-    "seed": 7,
-    "backfill": {"enabled": true, "days": 1, "step_s": 300, "publish_interval_ms": 20},
+        "noise": 0.0
+      }
+    }
+  },
+  "sample_interval_s": 300,
+  "batch_points": 500,
+  "seed": 7,
+  "backfill": {
+    "enabled": true,
+    "days": 1,
+    "step_s": 300,
+    "publish_interval_ms": 20
+  }
 }
