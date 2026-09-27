@@ -48,9 +48,26 @@ class _WetBulbWeather(FakeWeatherProvider):
     name = "fake-it-optimizer"
 
 
+OP_POINT_IDS = list(range(101, 114))  # SIM_0100..0112（e2e-seed 顺序分配 id）
+
+
 async def _refresh_caggs(admin_dsn: str) -> None:
     admin = await asyncpg.connect(admin_dsn)
     try:
+        await admin.execute("CALL refresh_continuous_aggregate('telemetry_5min', NULL, NULL)")
+        await admin.execute("CALL refresh_continuous_aggregate('telemetry_1h', NULL, NULL)")
+    finally:
+        await admin.close()
+
+
+async def _purge_scenario_data(admin_dsn: str) -> None:
+    """逐场景清理优化器点位的原始+聚合数据（场景确定性：不同回放的 ts 网格错位，
+    同桶混值会污染窗口均值；删除后 refresh 使 cagg 失效区间重算）。"""
+    admin = await asyncpg.connect(admin_dsn)
+    try:
+        await admin.execute(
+            "DELETE FROM telemetry WHERE point_id = ANY($1::bigint[])", OP_POINT_IDS
+        )
         await admin.execute("CALL refresh_continuous_aggregate('telemetry_5min', NULL, NULL)")
         await admin.execute("CALL refresh_continuous_aggregate('telemetry_1h', NULL, NULL)")
     finally:
@@ -127,6 +144,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
     await consumer.start()  # 先就位（latest 语义 seek end——后续消息全量入缓存）
     try:
         # ── 场景 A：低载双机 → R2 ──────────────────────────────────────────
+        await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-a-lowload-dual.json")
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         ra = await engine.run_round()
@@ -145,6 +163,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         # ── 场景 B：高载单机+待机 → R3（保护性负 saving）────────────────────
         state.proposal_posts.clear()
         engine.memory.reset()  # 换场景清提交记忆（每场景独立评审）
+        await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-b-highload-single.json")
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         rb = await engine.run_round()
@@ -162,6 +181,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         # ── 场景 C：低温差 → R1 + 三轮节流（仅首轮出卡）───────────────────
         state.proposal_posts.clear()
         engine.memory.__init__()
+        await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-c-lowdeltat.json")
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         rc1 = await engine.run_round()
@@ -191,6 +211,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         # ── 场景 D：冷凝侧 → R4 ────────────────────────────────────────────
         state.proposal_posts.clear()
         engine.memory.__init__()
+        await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-d-condenser.json")
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         rd = await engine.run_round()
@@ -208,6 +229,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         # ── 场景 E：FDD 开放发现抑制 R1（§6.7）────────────────────────────
         state.proposal_posts.clear()
         engine.memory.__init__()
+        await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-e-fdd-suppress.json")
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         thresholds = ThresholdStore(FIXTURES / "thresholds-it.yaml")  # confirm=1
@@ -262,6 +284,8 @@ async def test_optimizer_advisory_only_gate(it_env) -> None:  # type: ignore[no-
     ) = await _setup(it_env)  # 夹具口径：快照投影在 PG 直改之后装配
     await consumer.start()
     try:
+        await _purge_scenario_data(it_env.tsdb_admin_dsn)
+        await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-c-lowdeltat.json")
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         r = await engine.run_round()

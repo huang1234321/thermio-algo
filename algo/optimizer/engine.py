@@ -52,7 +52,7 @@ from algo.proposal.producer import ProposalSubmitter, new_proposal_id
 from algo.semantics.snapshot import SnapshotService
 from algo.semantics.types import AssetSnapshot, PointView
 from algo.tsdb.client import TsdbClient
-from algo.tsdb.windows import fetch_buckets, gated_series
+from algo.tsdb.windows import QUALITY_BIT_UNIT_UNCONVERTED, fetch_buckets
 from algo.versioning import optimizer_algo_version
 
 log = get_logger(__name__)
@@ -286,7 +286,7 @@ class OptimizerEngine:
                 rows = [
                     r for r in raw_buckets.get(p.point_id, []) if r.bucket >= evaluation_ts - window
                 ]
-                by_qty[qty] = gated_series(rows, min_good)
+                by_qty[qty] = _gated_series(rows, min_good)
             return by_qty
 
         def latest_numeric(p: PointView) -> float | None:
@@ -553,6 +553,31 @@ async def fetch_1h_avgs(
     for r in rows:
         if r["avg"] is not None:
             out[r["point_id"]].append((r["bucket"], r["avg"]))
+    return out
+
+
+# 信息位掩码（ingest.md §4 v1 冻结表）：bit8 Backfill 为信息位（补传标记，非坏样本）。
+# cagg bad_count = count(quality <> 0) 把信息位也计入——与位表「信息位非坏」分类冲突
+# （跨仓发现，记交付说明）；algo 侧以 quality_mask 判别：mask 无坏位（bits 0–7）的桶
+# 视为全好，补传回放数据因此可进寻优窗口（§5.2 门控的本意）。
+_QUALITY_BAD_BITS = 0x00FF  # bits 0–7（6/7 预留未置位，等价坏位面）
+
+
+def _gated_series(rows: list[BucketRow], min_good_ratio: float) -> list[BucketRow]:
+    """优化器窗口门控（§5.2 + 信息位判别）。"""
+    out: list[BucketRow] = []
+    for b in rows:
+        if b.sample_count <= 0:
+            continue
+        if b.quality_mask & _QUALITY_BAD_BITS == 0:
+            out.append(b)  # 仅信息位置位（补传）——样本全好
+            continue
+        good_ratio = 1.0 - (b.bad_count / b.sample_count)
+        if good_ratio < min_good_ratio:
+            continue
+        if b.quality_mask & QUALITY_BIT_UNIT_UNCONVERTED:
+            continue
+        out.append(b)
     return out
 
 
