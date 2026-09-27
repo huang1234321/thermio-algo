@@ -89,6 +89,36 @@ async def _wait_for_scenario_data(it_env, latest: LatestCache) -> None:  # type:
     pytest.fail("场景数据 90s 内未完成过链（EMQX→ingestd→TSDB/Kafka）——检查 ingestd 日志")
 
 
+async def _warmup_points(it_env) -> None:  # type: ignore[no-untyped-def]
+    """场景序列前的暖流（bit3 根因修复）。
+
+    OP 点位静默超 stale_timeout_s（DDL 默认 300s——全量套件中 FDD 回放先行
+    6min+ 即触发）后，ingest StaleTracker 对 stale 期间的新写入打 bit3
+    （process.go §6.3「stale 期间的写入携带 bit3」）——回放首波数据
+    quality_mask=264 被窗口门控全灭（plant_series 全 0 的根因）。
+    先送两轮 live（8s）清 tracker，再进 purge→回放序列（场景间隔 <300s
+    不会复触）。
+    """
+    import time as _time
+
+    await _run_gwsim(it_env, "optimizer-warmup.json")
+    deadline = _time.monotonic() + 30
+    while _time.monotonic() < deadline:
+        conn = await asyncpg.connect(it_env.tsdb_admin_dsn)
+        try:
+            n = await conn.fetchval(
+                "SELECT count(*) FROM telemetry WHERE point_id = ANY($1::bigint[]) "
+                "AND ts > now() - interval '2 minutes'",
+                OP_POINT_IDS,
+            )
+        finally:
+            await conn.close()
+        if (n or 0) >= len(OP_POINT_IDS):
+            return
+        await asyncio.sleep(1)
+    pytest.fail("暖流数据 30s 未过链")
+
+
 async def _ensure_window_buckets(it_env) -> dict[int, int]:  # type: ignore[no-untyped-def]
     """确认 cagg 评估窗已物化（自愈重试 + 诊断计数）。
 
@@ -199,6 +229,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
     await consumer.start()  # 先就位（latest 语义 seek end——后续消息全量入缓存）
     try:
         # ── 场景 A：低载双机 → R2 ──────────────────────────────────────────
+        await _warmup_points(it_env)  # 清 StaleTracker（bit3 根因，见函数注）
         await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-a-lowload-dual.json")
         await _wait_for_scenario_data(it_env, latest)
@@ -337,6 +368,7 @@ async def test_optimizer_advisory_only_gate(it_env) -> None:  # type: ignore[no-
         "UPDATE point SET control_mode = 'supervised' WHERE raw_name IN ('SIM_0105','SIM_0106')"
     )
     await conn.close()
+    await _warmup_points(it_env)  # 清 StaleTracker（bit3 根因，见函数注）
     (
         state,
         server,

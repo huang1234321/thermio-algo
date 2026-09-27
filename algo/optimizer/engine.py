@@ -369,7 +369,17 @@ class OptimizerEngine:
             for t in towers
         ]
         weather = self._round_weather  # 装配期复用轮级天气视图
-        derived = _derive_metrics(unit_views, series_for(points), weather)
+        plant_series_dbg = series_for(points)
+        derived = _derive_metrics(unit_views, plant_series_dbg, weather)
+        log.info(
+            "optimizer_plant_debug",
+            system_id=system_id,
+            plant_series={k: len(v) for k, v in plant_series_dbg.items()},
+            unit_series={u.local_id: {k: len(v) for k, v in u.series.items()} for u in unit_views},
+            unit_latest={u.local_id: dict(u.latest) for u in unit_views},
+            derived=repr(derived),
+            raw_bucket_pids=sorted({r.point_id for rows in raw_buckets.values() for r in rows}),
+        )
         affine = await self._affine_models(unit_views, evaluation_ts)
         return PlantView(
             system_id=system_id,
