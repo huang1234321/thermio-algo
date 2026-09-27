@@ -122,9 +122,7 @@ async def test_real_internal_face_end_to_end() -> None:
 
         # ── 2) POST findings：首轮 insert、续报刷新时间轴不变、clear 置 resolved ──
         rule = "chiller.delta_t_low"
-        await client.submit_fdd_findings(
-            _batch(ALGO_VERSION, [_hit(equipment_id, rule, now)])
-        )
+        await client.submit_fdd_findings(_batch(ALGO_VERSION, [_hit(equipment_id, rule, now)]))
         await client.submit_fdd_findings(
             _batch(
                 ALGO_VERSION,
@@ -215,28 +213,34 @@ def _batch(
     return FddFindingsBatch(algo_version=algo_version, hits=hits, cleared=cleared or [])
 
 
-def _report_payload(
-    building_id: str, equipment_id: str, algo_version: str
-) -> FddReportSubmission:
+def _report_payload(building_id: str, equipment_id: str, algo_version: str) -> FddReportSubmission:
     end = datetime.now(UTC).date()
     start = end - timedelta(days=1)
-    return FddReportSubmission.model_validate({
-        "building_id": building_id,
-        "period_type": "day",
-        "period": {"start": start.isoformat(), "end": end.isoformat()},
-        "summary": {
-            "counts": {"new": 1, "resolved": 0, "persisting": 1},
-            "new_by_severity": {"info": 0, "warning": 1, "minor": 0, "major": 0, "critical": 0},
-            "open_by_severity": {"info": 0, "warning": 1, "minor": 0, "major": 0, "critical": 0},
-            "health_ranking": [
-                {
-                    "equipment_id": equipment_id,
-                    "equipment_name": "IT 真实端点冷机",
-                    "equipment_type": "chiller",
-                    "open_count": 1,
-                    "weighted_score": 2,
-                }
-            ],
-        },
-        "algo_version": algo_version,
-    })
+    return FddReportSubmission.model_validate(
+        {
+            "building_id": building_id,
+            "period_type": "day",
+            "period": {"start": start.isoformat(), "end": end.isoformat()},
+            "summary": {
+                "counts": {"new": 1, "resolved": 0, "persisting": 1},
+                "new_by_severity": {"info": 0, "warning": 1, "minor": 0, "major": 0, "critical": 0},
+                "open_by_severity": {
+                    "info": 0,
+                    "warning": 1,
+                    "minor": 0,
+                    "major": 0,
+                    "critical": 0,
+                },
+                "health_ranking": [
+                    {
+                        "equipment_id": equipment_id,
+                        "equipment_name": "IT 真实端点冷机",
+                        "equipment_type": "chiller",
+                        "open_count": 1,
+                        "weighted_score": 2,
+                    }
+                ],
+            },
+            "algo_version": algo_version,
+        }
+    )
