@@ -240,17 +240,28 @@ fi
 # ── 8. 跑 integration 用例 ─────────────────────────────────────────────────
 log "pytest -m integration"
 set +e
-ALGO_IT=1 \
-  ${ALGO_IT_API_BASE_URL:+ALGO_IT_API_BASE_URL="$ALGO_IT_API_BASE_URL"} \
-  ALGO_IT_TSDB_DSN="postgres://tsdb_algo:$TSDB_ALGO_PASSWORD@127.0.0.1:$TSDB_PORT/thermio_ts?sslmode=disable" \
-  ALGO_IT_TSDB_ADMIN_DSN="postgres://thermio_ts:thermio_dev_ts@127.0.0.1:$TSDB_PORT/thermio_ts?sslmode=disable" \
-  ALGO_IT_PG_DSN="postgres://thermio:thermio_dev_pg@127.0.0.1:$PG_PORT/thermio?sslmode=disable" \
-  ALGO_IT_KAFKA_BROKERS="127.0.0.1:$KAFKA_PORT" \
-  ALGO_IT_MQTT_URL="tcp://127.0.0.1:$EMQX_PORT" \
-  ALGO_IT_MQTT_PASSWORD="it-dev-anonymous" \
-  ALGO_IT_GWSIM="$BUILD/gw-sim" \
-  ALGO_IT_SVC_TOKEN="$IT_SVC_TOKEN" \
-  uv run pytest -m integration -v 2>&1 | tee "$BUILD/it-report.txt"
+# 修复（DAT-165 发现）：IT_REAL_API=0 且环境无 ALGO_IT_API_BASE_URL 时，
+# ${V:+V="$V"} 展开为空首词，下一行赋值被 bash 当作命令执行（No such file or
+# directory）。此前运行均走 IT_REAL_API=1（脚本内 export 使变量非空）未触发。
+# 改为显式分支，两条路径各自完整。
+run_pytest() {
+  ALGO_IT=1 \
+    ALGO_IT_TSDB_DSN="postgres://tsdb_algo:$TSDB_ALGO_PASSWORD@127.0.0.1:$TSDB_PORT/thermio_ts?sslmode=disable" \
+    ALGO_IT_TSDB_ADMIN_DSN="postgres://thermio_ts:thermio_dev_ts@127.0.0.1:$TSDB_PORT/thermio_ts?sslmode=disable" \
+    ALGO_IT_PG_DSN="postgres://thermio:thermio_dev_pg@127.0.0.1:$PG_PORT/thermio?sslmode=disable" \
+    ALGO_IT_KAFKA_BROKERS="127.0.0.1:$KAFKA_PORT" \
+    ALGO_IT_MQTT_URL="tcp://127.0.0.1:$EMQX_PORT" \
+    ALGO_IT_MQTT_PASSWORD="it-dev-anonymous" \
+    ALGO_IT_GWSIM="$BUILD/gw-sim" \
+    ALGO_IT_SVC_TOKEN="$IT_SVC_TOKEN" \
+    "$@"
+}
+if [[ -n "${ALGO_IT_API_BASE_URL:-}" ]]; then
+  run_pytest ALGO_IT_API_BASE_URL="$ALGO_IT_API_BASE_URL" \
+    uv run pytest -m integration -v 2>&1 | tee "$BUILD/it-report.txt"
+else
+  run_pytest uv run pytest -m integration -v 2>&1 | tee "$BUILD/it-report.txt"
+fi
 RC=${PIPESTATUS[0]}
 set -e
 log "报告：$BUILD/it-report.txt"
