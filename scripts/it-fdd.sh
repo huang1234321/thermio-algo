@@ -215,7 +215,7 @@ if [[ "$IT_REAL_API" == "1" ]]; then
     PG_API_URL="postgres://thermio_api:$THERMIO_API_PASSWORD@127.0.0.1:$PG_PORT/thermio?sslmode=disable" \
     PG_AUTH_URL="postgres://thermio_auth:$THERMIO_AUTH_PASSWORD@127.0.0.1:$PG_PORT/thermio?sslmode=disable" \
     PORT="$API_PORT" \
-    AUTH_JWT_SECRET="it-api-jwt-secret-0123456789abcdef-0123456789abcdef" \
+    AUTH_JWT_SECRET="it-jwt-$(openssl rand -hex 16)" \
     PROPOSAL_MOCK_EXECUTOR=off \
     node "$PLATFORM/apps/api/dist/main.js" >"$API_LOG" 2>&1 &
     echo $! >"$API_PIDFILE"
