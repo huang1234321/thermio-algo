@@ -35,6 +35,30 @@ PROPOSAL_SUBMISSIONS_TOTAL = Counter(
     ["result"],  # result ∈ created | rejected | dropped | expired
 )
 
+# 优化器面（optimizer.md §9；与 algo_proposal_submissions_total 两层不重复计数：
+# 本表计「本轮仲裁结果」，提交结果计上方既有指标）
+OPTIMIZER_PROPOSALS_TOTAL = Counter(
+    f"{_ns}_optimizer_proposals_total",
+    "优化器候选去向（仲裁层）",
+    ["strategy", "result"],  # result ∈ emitted | deduped | throttled | selfcheck_failed
+)
+OPTIMIZER_FORECAST_SOURCE = Gauge(
+    f"{_ns}_optimizer_forecast_source",
+    "负荷预测降级链当前生效源（1=当前源）",
+    ["source"],  # source ∈ model | persistence | none
+)
+OPTIMIZER_STRATEGY_APPLICABLE = Gauge(
+    f"{_ns}_optimizer_strategy_applicable",
+    "策略适用性判定结果（0=量类型缺失/禁用——点表配齐度验收抓手）",
+    ["strategy", "system_id"],
+)
+OPTIMIZER_SAVING_ESTIMATED_KW = Histogram(
+    f"{_ns}_optimizer_saving_estimated_kw",
+    "节能量估算分布（回测对照的线上影子）",
+    ["strategy"],
+    buckets=(1, 2, 5, 10, 20, 50, 100, 200, 500, 1000),
+)
+
 # 数据入口健康面
 KAFKA_CONSUMER_LAG = Gauge(
     f"{_ns}_kafka_consumer_lag", "消费 lag（ADR-017 监控项）", ["group", "topic"]

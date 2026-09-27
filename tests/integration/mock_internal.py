@@ -27,6 +27,7 @@ class InternalState:
         self.svc_token = svc_token
         self.findings_posts: list[dict[str, Any]] = []  # 原始报文留档
         self.report_posts: list[dict[str, Any]] = []
+        self.proposal_posts: list[dict[str, Any]] = []  # IMPL-19：optimizer 信封留档
         self.active: dict[tuple[str, str], dict[str, Any]] = {}  # (eq, rule) → 行
         self.resolved: list[dict[str, Any]] = []
         self.snapshot_requests: list[dict[str, str]] = []
@@ -124,6 +125,44 @@ def make_server(state: InternalState) -> tuple[ThreadingHTTPServer, str]:
                 return
             length = int(self.headers.get("content-length", "0"))
             payload = json.loads(self.rfile.read(length) or b"{}")
+            if self.path == "/internal/proposals":
+                # M5 §3.8 最小行为：必填校验 → 201（client_ref 回显；幂等去重不模拟——
+                # R2 过渡态，api 侧同样不去重）
+                required = (
+                    "proposal_id",
+                    "algo",
+                    "algo_version",
+                    "target",
+                    "action",
+                    "previous_value",
+                    "rationale",
+                    "expected_saving_kw",
+                    "confidence",
+                    "evidence",
+                    "expires_at",
+                )
+                missing = [k for k in required if payload.get(k) is None]
+                if missing:
+                    self._json(
+                        422,
+                        {
+                            "reason_code": "proposal.payload_invalid",
+                            "details": {"cause": "required", "fields": missing},
+                        },
+                    )
+                    return
+                with state._lock:
+                    state.proposal_posts.append(payload)
+                self._json(
+                    201,
+                    {
+                        "proposal_id": f"srv-{len(state.proposal_posts)}",
+                        "client_ref": payload["proposal_id"],
+                        "status": "pending",
+                        "expires_at": payload["expires_at"],
+                    },
+                )
+                return
             if self.path == "/internal/fdd/findings":
                 state.apply_findings(payload)
                 self._json(200, {"ok": True})

@@ -103,6 +103,11 @@ class FddEngine:
     def thresholds(self) -> ThresholdStore:
         return self._thresholds
 
+    @property
+    def hysteresis(self) -> Hysteresis:
+        """迟滞状态面（optimizer.md §6.7：FDD 开放发现的进程内抑制视图绑定处）。"""
+        return self._hysteresis
+
     async def run_round(self, now: datetime | None = None) -> RoundReport:
         """一轮评估（调度任务 fdd_eval 的任务体；调度层兜「单轮失败不中断」）。"""
         with mt.JOB_DURATION_MS.labels(job="fdd_eval").time():

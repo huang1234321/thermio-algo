@@ -152,6 +152,12 @@ log "FDD 夹具种子（幂等）"
 docker exec -i "$CTR_PG" psql -U thermio -d thermio -v ON_ERROR_STOP=1 \
   <tests/integration/fixtures/algo-fdd-seed.sql | tail -3
 
+# 优化器夹具种子（IMPL-19/DAT-165：冷源站房 OP-SYS + SIM_0100..0112 语义面；
+# 与 FDD 夹具点位段隔离，场景回放互不污染）
+log "优化器夹具种子（幂等）"
+docker exec -i "$CTR_PG" psql -U thermio -d thermio -v ON_ERROR_STOP=1 \
+  <tests/integration/fixtures/algo-optimizer-seed.sql | tail -3
+
 # ── 5. TSDB：角色（首次）+ 迁移（幂等）─────────────────────────────────────
 tsdb_role_exists() {
   docker exec "$CTR_TSDB" psql -U thermio_ts -d thermio_ts -tAc \

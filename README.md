@@ -1,8 +1,12 @@
 # thermio-algo
 
-thermio 算法服务（Python，ADR-008/016）：FDD 规则引擎 + APScheduler 多调度任务 + proposal 生成器接口。
+thermio 算法服务（Python，ADR-008/016）：FDD 规则引擎 + 冷热源 advisory 优化器
++ APScheduler 多调度任务 + proposal 生成器接口。
 
 - 服务详设：伞仓 `docs/design/algo.md`（本仓结构 = 其 §2 目录蓝图逐件落地）
+- 优化器详设：伞仓 `docs/design/optimizer.md`（`algo/optimizer/` = 其 §2 蓝图落地；
+  卡片 IMPL-19 / DAT-165——冷源 sequencer advisory-only，四策略 R1/R2/R3/R4 +
+  arbiter 节流 + persistence 预测降级链）
 - 建仓卡片：`docs/design/implementation-plan.md` IMPL-16（DAT-154）
 - 规范基线：`docs/conventions/company/`（PY-01..07、SEC-KEY、CODE-LOG/ST/TST、OBS-MT、FLOW-GIT）
 
@@ -16,6 +20,21 @@ thermio 算法服务（Python，ADR-008/016）：FDD 规则引擎 + APScheduler 
   「提交 proposal、收到 201」处截断。
 - 所有输出带 `algo_version`（ADR-008）：FDD 版本 = `<semver>+<rule_pack_fp8>`，
   指纹纳入生效阈值（热调归因闭环，algo.md §9）。
+
+## 优化器（IMPL-19）
+
+- 启用：`ALGO_JOBS_ENABLED` 追加 `optimize_15m`（槽位默认禁用，algo.md §3）；
+  配置 `config/optimizer.yaml`（mtime 热调，坏配置沿用上一份有效值；参数表见
+  optimizer.md §10/§11）；目标点位需 `control_mode=advisory`（§0 前置闸）。
+- 量类型前置：shared-types QUANTITY_TYPES 已发版 7 个寻优量（ optimizer.md §6.6-1）。
+- 集成回放（E2E 种子 + gw-sim）：`scripts/it-fdd.sh`（五场景矩阵
+  低载双机/高载单机/低温差/冷凝侧/FDD 抑制，夹具 `tests/integration/fixtures/`）。
+- 离线回测（验收件）：
+
+```bash
+uv run python scripts/backtest_optimizer.py --dsn <tsdb_algo DSN> --pg-dsn <pg DSN> \
+    --from <RFC3339> --to <RFC3339> --out build/backtest-report.json
+```
 
 ## 快速开始
 

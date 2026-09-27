@@ -64,7 +64,8 @@ class LatestCache:
 
 
 class TelemetryLatestConsumer:
-    """telemetry.raw 最新值消费（group algo-fdd）。"""
+    """telemetry.raw 最新值消费（默认 group algo-fdd；优化器传 group=algo-optimizer，
+    ADR-004 每算法能力独立 consumer group——optimizer.md §3.1 的 algo-optimizer 组）。"""
 
     def __init__(
         self,
@@ -72,11 +73,14 @@ class TelemetryLatestConsumer:
         cache: LatestCache,
         lag_warn: int = 5000,
         lag_check_interval_s: float = 30.0,
+        *,
+        group: str = GROUP_ALGO_FDD,
     ) -> None:
         self._brokers = brokers
         self._cache = cache
         self._lag_warn = lag_warn
         self._lag_check_interval_s = lag_check_interval_s
+        self._group = group
         self._consumer: AIOKafkaConsumer[ConsumerRecord] | None = None
         self._task: asyncio.Task[None] | None = None
         self._lag_task: asyncio.Task[None] | None = None
@@ -85,7 +89,7 @@ class TelemetryLatestConsumer:
         self._consumer = AIOKafkaConsumer(
             RAW,
             bootstrap_servers=self._brokers,
-            group_id=GROUP_ALGO_FDD,
+            group_id=self._group,
             auto_offset_reset="latest",  # 最新值语义：启动 seek 到 end（§4.1）
             enable_auto_commit=True,
         )
@@ -139,7 +143,7 @@ class TelemetryLatestConsumer:
                     for tp in partitions:
                         pos = await self._consumer.position(tp)
                         total_lag += max(0, end[tp] - pos)
-                    mt.KAFKA_CONSUMER_LAG.labels(group=GROUP_ALGO_FDD, topic=RAW).set(total_lag)
+                    mt.KAFKA_CONSUMER_LAG.labels(group=self._group, topic=RAW).set(total_lag)
                     if total_lag > self._lag_warn:
                         log.warning(
                             "telemetry 消费 lag 超阈，主动 seek end（旧中间值由 TSDB 窗口兜底）",
