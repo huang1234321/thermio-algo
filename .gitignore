@@ -1,0 +1,13 @@
+# 运行态与本地环境（SEC-KEY-06：.env 不入库）
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+# 集成测试运行产物（留痕不入库）
+tests/integration/.run/
