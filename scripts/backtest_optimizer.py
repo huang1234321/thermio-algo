@@ -217,11 +217,14 @@ async def assemble_plant(
         return out
 
     def series_for(pts: list[PointView]) -> dict[str, list]:
-        from algo.tsdb.windows import gated_series
+        # 引擎同款门控（含信息位判别）——回放数据 mask 含 bit8 补传信息位，
+        # FDD 原版 gated_series 会按 bad_count 全灭（§8.4-2「复用生产策略代码
+        # 路径」的口径一致性）
+        from algo.optimizer.engine import _gated_series
 
         out = {}
         for qty, p in first_by_qty(pts).items():
-            out[qty] = gated_series(raw.get(p.point_id, []), min_good)
+            out[qty] = _gated_series(raw.get(p.point_id, []), min_good)
         return out
 
     building_id = next((e.building_id for e in chillers if e.building_id), "")
@@ -436,10 +439,15 @@ async def run_backtest(args: argparse.Namespace) -> dict:
                         t,
                         t + timedelta(minutes=30),
                     )
-                    post_vals = [r.avg for rows in post.values() for r in rows if r.avg is not None]
+                    # 逐桶全机组合计后再时间均值（与 baseline 的 Σ 在运单窗口均值同口径）
+                    post_by_ts: dict = {}
+                    for rows in post.values():
+                        for r in rows:
+                            if r.avg is not None:
+                                post_by_ts[r.bucket] = post_by_ts.get(r.bucket, 0.0) + r.avg
                     realized = None
-                    if post_vals:
-                        realized = baseline_p - fmean(post_vals)
+                    if post_by_ts:
+                        realized = baseline_p - fmean(post_by_ts.values())
                     drafts.append(
                         ReplayDraft(
                             evaluation_ts=t,
@@ -449,7 +457,7 @@ async def run_backtest(args: argparse.Namespace) -> dict:
                             confidence=d.confidence,
                             formula_id=str(d.evidence.get("formula_id", "?")),
                             baseline_p_kw=baseline_p,
-                            post_p_kw=fmean(post_vals) if post_vals else None,
+                            post_p_kw=fmean(post_by_ts.values()) if post_by_ts else None,
                         )
                     )
     await pool.close()
