@@ -60,6 +60,35 @@ async def _refresh_caggs(admin_dsn: str) -> None:
         await admin.close()
 
 
+async def _wait_for_scenario_data(it_env, latest: LatestCache) -> None:  # type: ignore[no-untyped-def]
+    """等场景数据过链再刷新评估（时序确定性）。
+
+    gw-sim 退出只代表发布完成——ingestd 批量写 TSDB 与 Kafka 消费仍在途；
+    全量套件（前置 6min FDD 回放负载）下立即 refresh 曾读到空桶
+    （drafts=0/forecast=none 的间歇性失败根因）。就位判据：
+    ① 原始表近 15min 出现本场景 live 行（FIFO 保证更早的回放行已落）；
+    ② 优化器 consumer 缓存覆盖全部场景点位（previous_value 走缓存路径）。
+    """
+    import time as _time
+
+    deadline = _time.monotonic() + 90
+    while _time.monotonic() < deadline:
+        conn = await asyncpg.connect(it_env.tsdb_admin_dsn)
+        try:
+            n = await conn.fetchval(
+                "SELECT count(*) FROM telemetry WHERE point_id = ANY($1::bigint[]) "
+                "AND ts > now() - interval '15 minutes'",
+                OP_POINT_IDS,
+            )
+        finally:
+            await conn.close()
+        cached = sum(1 for pid in OP_POINT_IDS if latest.get(pid) is not None)
+        if (n or 0) >= len(OP_POINT_IDS) and cached >= len(OP_POINT_IDS):
+            return
+        await asyncio.sleep(1)
+    pytest.fail("场景数据 90s 内未完成过链（EMQX→ingestd→TSDB/Kafka）——检查 ingestd 日志")
+
+
 async def _purge_scenario_data(admin_dsn: str) -> None:
     """逐场景清理优化器点位的原始+聚合数据（场景确定性：不同回放的 ts 网格错位，
     同桶混值会污染窗口均值；删除后 refresh 使 cagg 失效区间重算）。"""
@@ -146,6 +175,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         # ── 场景 A：低载双机 → R2 ──────────────────────────────────────────
         await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-a-lowload-dual.json")
+        await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         ra = await engine.run_round()
         assert ra.errors == 0 and ra.plants >= 1
@@ -165,6 +195,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         engine.memory.reset()  # 换场景清提交记忆（每场景独立评审）
         await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-b-highload-single.json")
+        await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         rb = await engine.run_round()
         assert rb.errors == 0
@@ -183,6 +214,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         engine.memory.__init__()
         await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-c-lowdeltat.json")
+        await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         rc1 = await engine.run_round()
         assert rc1.errors == 0
@@ -213,6 +245,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         engine.memory.__init__()
         await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-d-condenser.json")
+        await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         rd = await engine.run_round()
         assert rd.errors == 0
@@ -231,6 +264,7 @@ async def test_optimizer_scenario_matrix(it_env) -> None:  # type: ignore[no-unt
         engine.memory.__init__()
         await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-e-fdd-suppress.json")
+        await _wait_for_scenario_data(it_env, latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         thresholds = ThresholdStore(FIXTURES / "thresholds-it.yaml")  # confirm=1
         hyst = Hysteresis()
@@ -287,6 +321,7 @@ async def test_optimizer_advisory_only_gate(it_env) -> None:  # type: ignore[no-
         await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _purge_scenario_data(it_env.tsdb_admin_dsn)
         await _run_gwsim(it_env, "optimizer-c-lowdeltat.json")
+        await _wait_for_scenario_data(it_env, _latest)
         await _refresh_caggs(it_env.tsdb_admin_dsn)
         r = await engine.run_round()
         assert r.errors == 0
