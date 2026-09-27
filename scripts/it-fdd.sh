@@ -19,6 +19,20 @@ mkdir -p "$BUILD"
 log() { printf '\033[1;36m[it-fdd]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[it-fdd FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 
+# ── 0.5 真实 internal 面开关（DAT-163/IMPL-17 并入项）────────────────────────
+# 平台侧 internal 三端点（asset-snapshot / fdd findings GET·POST / reports POST）
+# 已落地（platform 迁移 0007/0008）：起真实 api 进程，test_internal_real.py 直连
+# 断言（ALGO_IT_API_BASE_URL 门控）；不设 IT_REAL_API=1 时跳过本段——
+# algo.md §14 mock 回放链路保持既定方式不受影响（mock 是默认，真实面是增量衔接）。
+IT_REAL_API="${IT_REAL_API:-0}"
+API_PORT="${IT_API_PORT:-18080}"
+IT_SVC_TOKEN="${IT_SVC_TOKEN:-it-svc-token-$(openssl rand -hex 8)}"
+API_PIDFILE="$BUILD/api.pid"
+API_LOG="$BUILD/api.log"
+api_running() {
+  [[ -f "$API_PIDFILE" ]] && kill -0 "$(cat "$API_PIDFILE")" 2>/dev/null
+}
+
 # ── 0. 定位兄弟仓（向上找伞仓；本仓常检出在伞仓内或其旁）───────────────────
 UMBRELLA="${THERMIO_UMBRELLA:-}"
 if [[ -z "$UMBRELLA" ]]; then
@@ -189,10 +203,39 @@ else
   log "ingestd 已在跑（pid $(cat "$INGESTD_PIDFILE")）"
 fi
 
+# ── 7.5 真实 api 进程（internal 面衔接自测用；IT_REAL_API=1 启用）────────────
+if [[ "$IT_REAL_API" == "1" ]]; then
+  command -v pnpm >/dev/null || die "IT_REAL_API=1 需要 pnpm"
+  if ! api_running; then
+    log "构建并启动 thermio-api（internal 面：SVC_TOKEN_ALGO + PG 双池）"
+    ( cd "$PLATFORM" && pnpm install --prefer-offline >/dev/null \
+      && pnpm --filter @thermio/shared-types build >/dev/null \
+      && pnpm --filter api build >/dev/null ) || die "api 构建失败"
+    SVC_TOKEN_ALGO="$IT_SVC_TOKEN" \
+    PG_API_URL="postgres://thermio_api:$THERMIO_API_PASSWORD@127.0.0.1:$PG_PORT/thermio?sslmode=disable" \
+    PG_AUTH_URL="postgres://thermio_auth:$THERMIO_AUTH_PASSWORD@127.0.0.1:$PG_PORT/thermio?sslmode=disable" \
+    PORT="$API_PORT" \
+    AUTH_JWT_SECRET="it-jwt-$(openssl rand -hex 16)" \
+    PROPOSAL_MOCK_EXECUTOR=off \
+    node "$PLATFORM/apps/api/dist/main.js" >"$API_LOG" 2>&1 &
+    echo $! >"$API_PIDFILE"
+    for _ in $(seq 1 30); do
+      curl -sf "http://127.0.0.1:$API_PORT/healthz" >/dev/null 2>&1 && break
+      sleep 1
+    done
+    api_running || { tail -20 "$API_LOG"; die "api 启动失败"; }
+    log "api pid=$(cat "$API_PIDFILE")（日志 build/api.log，端口 $API_PORT）"
+  else
+    log "api 已在跑（pid $(cat "$API_PIDFILE")）"
+  fi
+  export ALGO_IT_API_BASE_URL="http://127.0.0.1:$API_PORT"
+fi
+
 # ── 8. 跑 integration 用例 ─────────────────────────────────────────────────
 log "pytest -m integration"
 set +e
 ALGO_IT=1 \
+  ${ALGO_IT_API_BASE_URL:+ALGO_IT_API_BASE_URL="$ALGO_IT_API_BASE_URL"} \
   ALGO_IT_TSDB_DSN="postgres://tsdb_algo:$TSDB_ALGO_PASSWORD@127.0.0.1:$TSDB_PORT/thermio_ts?sslmode=disable" \
   ALGO_IT_TSDB_ADMIN_DSN="postgres://thermio_ts:thermio_dev_ts@127.0.0.1:$TSDB_PORT/thermio_ts?sslmode=disable" \
   ALGO_IT_PG_DSN="postgres://thermio:thermio_dev_pg@127.0.0.1:$PG_PORT/thermio?sslmode=disable" \
@@ -200,7 +243,7 @@ ALGO_IT=1 \
   ALGO_IT_MQTT_URL="tcp://127.0.0.1:$EMQX_PORT" \
   ALGO_IT_MQTT_PASSWORD="it-dev-anonymous" \
   ALGO_IT_GWSIM="$BUILD/gw-sim" \
-  ALGO_IT_SVC_TOKEN="it-svc-token-$(openssl rand -hex 4)" \
+  ALGO_IT_SVC_TOKEN="$IT_SVC_TOKEN" \
   uv run pytest -m integration -v 2>&1 | tee "$BUILD/it-report.txt"
 RC=${PIPESTATUS[0]}
 set -e
