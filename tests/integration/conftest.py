@@ -25,6 +25,7 @@ def _req(name: str) -> str:
 @dataclass(frozen=True)
 class ItEnv:
     tsdb_dsn: str  # tsdb_algo 角色
+    tsdb_admin_dsn: str  # 仅测试编排（runbook 面：手动 cagg refresh），非 algo 进程
     pg_dsn: str  # 夹具/快照构建用（mock 的 api 侧投影，非 algo 进程面）
     kafka_brokers: str
     mqtt_broker_url: str
@@ -39,6 +40,7 @@ def it_env() -> ItEnv:
         pytest.skip("ALGO_IT!=1（integration 需独立栈，经 scripts/it-fdd.sh 驱动）")
     return ItEnv(
         tsdb_dsn=_req("ALGO_IT_TSDB_DSN"),
+        tsdb_admin_dsn=_req("ALGO_IT_TSDB_ADMIN_DSN"),
         pg_dsn=_req("ALGO_IT_PG_DSN"),
         kafka_brokers=_req("ALGO_IT_KAFKA_BROKERS"),
         mqtt_broker_url=os.environ.get("ALGO_IT_MQTT_URL", "tcp://127.0.0.1:1883"),

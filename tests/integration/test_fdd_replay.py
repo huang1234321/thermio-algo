@@ -181,10 +181,20 @@ async def test_fdd_replay_hit_refresh_hotreload_clear(it_env) -> None:  # type: 
             await asyncio.sleep(1)
         assert len(latest) >= 16, f"Kafka 最新值缓存未就绪: {len(latest)}"
 
+        # 3.5) 物化评估窗（ingest.md §8 runbook 口径：手动 CALL refresh 归属
+        #      属主/运维面——tsdb_algo 角色被正确拒绝（must be owner），由测试
+        #      编排以管理员连接执行；实测 TS 2.17 cagg materialized_only=true，
+        #      与 ddl.md §11.2「real-time 默认开」不符——跨仓发现，已记录交付说明）
+        admin = await asyncpg.connect(it_env.tsdb_admin_dsn)
+        try:
+            await admin.execute("CALL refresh_continuous_aggregate('telemetry_5min', NULL, NULL)")
+        finally:
+            await admin.close()
+
         # 4) 第一轮评估 → 新命中（confirm=1）
         r1 = await engine.run_round()
         assert r1.errors == 0, f"规则求值报错: {r1.errors}"
-        hit_rules = {k[1] for k in r1.hit_keys}
+        hit_rules = {h.rule_key for h in r1.submitted_hits}
         assert "chiller.delta_t_low" in hit_rules
         assert "chiller.temp_sensor_reversed" in hit_rules
         assert "cooling_tower.approach_high" in hit_rules
@@ -227,7 +237,7 @@ async def test_fdd_replay_hit_refresh_hotreload_clear(it_env) -> None:  # type: 
         # 5) 第二轮（数据仍在窗内或新桶续报）→ upsert 刷新语义
         r2 = await engine.run_round()
         assert r2.errors == 0
-        if r2.hit_keys:  # 同规则续报：first_detected_at 不变（时间轴不漂移）
+        if r2.submitted_hits:  # 同规则续报：first_detected_at 不变（时间轴不漂移）
             posts2 = state.findings_posts[-1]
             for h in posts2["hits"]:
                 if h["rule_key"] == "chiller.delta_t_low":
@@ -240,13 +250,13 @@ async def test_fdd_replay_hit_refresh_hotreload_clear(it_env) -> None:  # type: 
         time.sleep(0.05)
         text = thresholds_path.read_text(encoding="utf-8")
         thresholds_path.write_text(
-            text.replace("delta_t_min_c: 1.2", "delta_t_min_c: 100.0"), encoding="utf-8"
+            text.replace("delta_t_min_c: 1.2", "delta_t_min_c: -100.0"), encoding="utf-8"
         )
         r3 = await engine.run_round()
         assert r3.errors == 0
-        hit3 = {k[1] for k in r3.hit_keys}
+        hit3 = {h.rule_key for h in r3.submitted_hits}
         assert "chiller.delta_t_low" not in hit3  # 新阈值已生效
-        cleared3 = {k[1] for k in r3.cleared_keys}
+        cleared3 = {c.rule_key for c in r3.submitted_cleared}
         assert "chiller.delta_t_low" in cleared3  # clear=1 → 本轮即消除
         assert r3.algo_version != r1.algo_version  # 指纹纳入阈值（§9 归因闭环）
 

@@ -13,6 +13,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
+      - name: 原生依赖（python-snappy 解码 ingest 生产面压缩所需 libsnappy）
+        run: sudo apt-get update -q && sudo apt-get install -y -q libsnappy-dev
       - name: 依赖同步（uv.lock 入库，PY-03）
         run: uv sync --frozen
       - name: ruff（lint + format 校验，PY-07）
