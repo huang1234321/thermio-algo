@@ -164,6 +164,12 @@ async def _run_job_once(app: App, job_id: str) -> None:
     if job_id not in jobs:
         msg = f"未知或未启用的 --once 任务: {job_id}（可用: {sorted(jobs)}）"
         raise SystemExit(msg)
+    # D-45 预热窗：LatestCache consumer（seek-end）只有启动后新到的消息可入；
+    # 冷栈无 committed offsets 时立即评估 = 缓存空 → 规则运行门（run_status 等
+    # 最新值）第三态全拦。预热 ≥ 一个上游发布周期后再跑单轮。
+    if app.settings.algo_once_prime_s > 0:
+        log.info("once_prime_window", seconds=app.settings.algo_once_prime_s)
+        await asyncio.sleep(app.settings.algo_once_prime_s)
     await jobs[job_id][1]()
 
 
