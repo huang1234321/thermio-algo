@@ -253,6 +253,13 @@ class OptimizerEngine:
             plants=report.plants,
             drafts=len(report.drafts),
             emitted=report.arbitrated.emitted if report.arbitrated else 0,
+            # 仲裁去向计数（DAT-202 D-33b 可诊断性）：drafts>0 而 emitted=0 时，
+            # floored（< min_expected_saving_kw 噪声下限）/ deduped（同点多候选
+            # 取首）/ throttled（冷却窗或值死区）三计数直接定位去处——此前该形态
+            # 只能靠源码推演。
+            floored=report.arbitrated.floored if report.arbitrated else 0,
+            deduped=report.arbitrated.deduped if report.arbitrated else 0,
+            throttled=report.arbitrated.throttled if report.arbitrated else 0,
             submitted=len(report.submitted),
             selfcheck_failed=report.selfcheck_failed,
             errors=report.errors,
