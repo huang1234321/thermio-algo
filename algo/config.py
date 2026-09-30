@@ -40,6 +40,11 @@ class Settings(BaseSettings):
 
     # ── 调度 ──
     algo_tz: str = "Asia/Shanghai"
+    # --once 形态的 LatestCache 预热窗（DAT-202 D-45）：consumer seek-end 只见
+    # 启动后新消息，冷栈首跑（无 committed offsets）200ms 内消费 0 条 →
+    # run_status 等运行门第三态拦截。默认 0（服务形态不受影响）；彩排/联调
+    # 置 ≥ 一个发布周期让 live 消息入缓存。
+    algo_once_prime_s: float = 0.0
     algo_jobs_enabled: str = ",".join(DEFAULT_JOBS)
     algo_log_level: str = "INFO"
 
